@@ -18,35 +18,37 @@ async function serveMap(path,origin){
     return new Response(r.body,{headers});
   }catch{return new Response(null,{status:503});}
 }
-const privateHeaders = {'Cache-Control':'private, no-store','Vary':'Authorization'};
-async function matchesPassword(authorization,password){
-  if(!authorization?.startsWith('Basic '))return false;
-  let supplied;
-  try{supplied=atob(authorization.slice(6));}catch{return false;}
-  const encode=new TextEncoder();
-  const [actual,expected]=await Promise.all([supplied,'tao:'+password].map(
-    value=>crypto.subtle.digest('SHA-256',encode.encode(value))
-  ));
-  const a=new Uint8Array(actual),b=new Uint8Array(expected);
-  let difference=0;
-  for(let i=0;i<a.length;i++)difference|=a[i]^b[i];
-  return difference===0;
+const privateHeaders={'Cache-Control':'private, no-store'};
+async function checkOwner(ctx,env){
+  const owner=env.ROADBOOK_OWNER_EMAIL?.trim().toLowerCase();
+  if(!owner||!ctx?.access)return false;
+  const identity=await ctx.access.getIdentity();
+  return identity?.email?.trim().toLowerCase()===owner;
 }
 
 export default {
-  async fetch(request,env){
-    const url=new URL(request.url),path=url.pathname;
-    const password=env.ROADBOOK_PASSWORD;
-    if(typeof password!=='string'||! /^[!-~]{16,}$/.test(password)){
-      return new Response('Set the ROADBOOK_PASSWORD Worker secret to at least 16 printable ASCII characters.',{status:503,headers:privateHeaders});
+  async fetch(request,env,ctx){
+    const url=new URL(request.url);
+    const privatePage=url.pathname==='/account'||url.pathname.startsWith('/account/');
+    const path=privatePage?url.pathname.slice('/account'.length)||'/':url.pathname;
+    if(privatePage){
+      if(!env.ROADBOOK_OWNER_EMAIL?.trim()){
+        return new Response('Set the ROADBOOK_OWNER_EMAIL Worker secret and enable Cloudflare Access for /account.',{status:503,headers:privateHeaders});
+      }
+      try{
+        if(!await checkOwner(ctx,env)){
+          return new Response('Email sign-in required. Cloudflare Access must protect /account.',{status:403,headers:privateHeaders});
+        }
+      }catch{
+        return new Response('Email sign-in temporarily unavailable.',{status:503,headers:privateHeaders});
+      }
+      if(url.pathname==='/account')return new Response(null,{status:302,headers:{...privateHeaders,Location:'/account/'}});
     }
-    if(!await matchesPassword(request.headers.get('Authorization'),password)){
-      return new Response('Private roadbook',{status:401,headers:{...privateHeaders,'WWW-Authenticate':'Basic realm="Iberia Roadbook", charset="UTF-8"'}});
-    }
-    const user='owner';
     if(request.method==='GET'&&(path.startsWith('/basemap/')||path.startsWith('/imagery/')))return serveMap(path,url.origin);
     if(path==='/api/config')return json({mapToken:env.MAPBOX_PUBLIC_TOKEN?.startsWith('pk.')?env.MAPBOX_PUBLIC_TOKEN:null});
     if(path==='/api/state'){
+      if(!privatePage)return json({error:'请先使用邮箱登录'},401);
+      const user='owner';
       if(!env.DB)return json({error:'云端存档暂不可用'},503);
       try{
         if(request.method==='GET'){
@@ -70,10 +72,11 @@ export default {
         const raw=await request.text();
         if(raw.length>45000)return json({error:'请求过大'},413);
         const body=JSON.parse(raw);
-        return json(await planTrips(body,env.MAPBOX_ROUTING_TOKEN,url.origin));
+        return json(await planTrips(body,env.MAPBOX_ROUTING_TOKEN,url.origin,privatePage));
       }catch{return json({error:'排程失败，请重试'},400);}
     }
     if(path==='/api/walk'&&request.method==='POST'){
+      if(!privatePage)return json({error:'请先使用邮箱登录'},401);
       if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源不一致'},403);
       try{
         const body=await request.json(),allowed=body.coords;
@@ -83,7 +86,7 @@ export default {
         return route?json({road:route.geometry.coordinates,minutes:Math.round(route.duration/60),km:Math.round(route.distance/100)/10}):json({error:'找不到步行路线'},404);
       }catch{return json({error:'步行服务暂不可用'},503);}
     }
-    if(Object.hasOwn(assets,path))return new Response(assets[path],{headers:{'Content-Type':mime[path],'Cache-Control':path==='/'?'private, no-cache':'private, max-age=300','Vary':'Authorization','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
+    if(Object.hasOwn(assets,path))return new Response(assets[path],{headers:{'Content-Type':mime[path],'Cache-Control':privatePage||path==='/'?'private, no-store':'public, max-age=300','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
     return new Response('Not found',{status:404});
   }
 };

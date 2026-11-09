@@ -6,3 +6,8 @@
 @media print{body{background:white}.top,.workspace,#toast{display:none!important}#printArea{display:block;font:11pt/1.45 sans-serif;color:#222}.print-day{break-inside:avoid;margin:11px 0;border-top:1px solid #bbb;padding:5px 0}a{text-decoration:none}}
 
 @media print{#printArea button{display:none}#printArea .leg{padding:2px 0;border:0}#printArea .leg a{margin-left:8px}}
+
+.account-link{border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:12px;text-decoration:none;white-space:nowrap}
+.account-link:hover{background:#fff9ee}
+@media(max-width:720px){.account-link{font-size:10px;padding:5px 7px}.trip{gap:6px}}
+@media(max-width:390px){.trip .tripdot,.trip .tripdot+span{display:none}}

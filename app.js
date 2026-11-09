@@ -1,9 +1,17 @@
 const $=s=>document.querySelector(s);
 const panel=$('#panel'), content=$('#panelContent');
-const key='iberia-roadbook-2027-v1';
+const ownerMode=location.pathname.startsWith('/account/');
+const apiPrefix=ownerMode?'/account/api':'/api';
+const guestKey='iberia-roadbook-2027-guest-v1';
+const accountLink=$('#accountLink');
+if(ownerMode){
+  accountLink.href='/';
+  accountLink.textContent='访客视图';
+}
+let cloudReady=false;
 const statusNames={want:'想去',must:'必去',booked:'已预订'};
 const initial={records:{},locks:{},limit:270,allowApprox:false,trip:null,end:'madrid'};
-let state=readLocal(), tab='explore', detail=null, query='', category='', country='', dayFilter=null, busy=false, savedStatus='正在连接云端', dirty=0, planRevision=0, timer, toastTimer, dragId=null, walkingLine=null, sheetStart=0;
+let state=readLocal(), tab='explore', detail=null, query='', category='', country='', dayFilter=null, busy=false, savedStatus=ownerMode?'正在连接私人存档':'访客清单 · 保存在此浏览器', dirty=0, planRevision=0, timer, toastTimer, dragId=null, walkingLine=null, sheetStart=0;
 const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const attr=escapeHtml;
 const fmtDate=d=>d.slice(5).replace('-','/');
@@ -28,11 +36,20 @@ function apple(p,orig,mode){
   return 'https://maps.apple.com/?saddr='+orig.coords.slice().reverse().join(',')+'&daddr='+xy+'&dirflg='+({walking:'w',transit:'r',driving:'d'}[mode]||'d');
 }
 const map=mountMap(openPlace,notice);
-function readLocal(){try{return {...initial,...JSON.parse(localStorage.getItem(key)||'null')}}catch{return structuredClone(initial)}}
+function readLocal(){
+  if(ownerMode)return structuredClone(initial);
+  try{return {...initial,...JSON.parse(localStorage.getItem(guestKey)||'null')}}
+  catch{return structuredClone(initial)}
+}
 function notice(message){const t=$('#toast');t.textContent=message;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3400);}
 let pendingSave=Promise.resolve();
 function persist(){
-  try{localStorage.setItem(key,JSON.stringify(state));}catch{}
+  if(!ownerMode){
+    try{localStorage.setItem(guestKey,JSON.stringify(state));}
+    catch{savedStatus='此浏览器无法保存访客清单';}
+    return;
+  }
+  if(!cloudReady)return;
   const revision=++dirty;
   savedStatus='正在同步';
   clearTimeout(timer);
@@ -40,23 +57,31 @@ function persist(){
     const snapshot=JSON.stringify(state);
     pendingSave=pendingSave.catch(()=>{}).then(async()=>{
       try{
-        const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:snapshot,keepalive:snapshot.length<55000});
+        const r=await fetch(apiPrefix+'/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:snapshot,keepalive:snapshot.length<55000});
         if(!r.ok)throw Error();
         if(revision===dirty)savedStatus='已同步至私人存档';
-      }catch{if(revision===dirty)savedStatus='已保存在当前设备 · 云端同步待恢复';}
+      }catch{if(revision===dirty)savedStatus='云端同步失败 · 当前修改暂留本页';}
       const label=$('#saveStatus');if(label)label.textContent=savedStatus;
     });
   },420);
 }
 async function loadState(){
+  const nav=$('.top nav');
+  nav.inert=true;
+  content.textContent='正在加载私人存档…';
   try{
-    const r=await fetch('/api/state');if(!r.ok)throw Error();
+    const r=await fetch(apiPrefix+'/state');
+    if(!r.ok)throw Error();
     const data=await r.json();
-    if(!dirty&&data.state){state={...initial,...data.state};localStorage.setItem(key,JSON.stringify(state));render();}
-    else if(!dirty&&localStorage.getItem(key))persist();
-    if(!dirty)savedStatus='私人存档已连接';
-  }catch{savedStatus='当前设备存档 · 云端暂不可用';}
-  const label=$('#saveStatus');if(label)label.textContent=savedStatus;
+    if(data.state)state={...initial,...data.state};
+    cloudReady=true;
+    savedStatus='私人存档已连接';
+    render();
+  }catch{
+    content.innerHTML='<p class="warning">暂时无法加载私人存档。请重新打开邮箱登录。</p><a class="link" href="/account/">重新打开邮箱登录 ↗</a>';
+  }finally{
+    if(cloudReady)nav.inert=false;
+  }
 }
 function draftChanged(){planRevision++;if(state.trip)state.trip.stale=true;walkingLine=null;persist();}
 function record(id,patch){
@@ -118,7 +143,7 @@ function legCard(leg,day,index){
   if(!a||!b)return '';
   const driving=/自驾|道路/.test(leg.mode),walk=leg.mode==='步行估算';
   const mode=driving?'driving':walk?'walking':'transit';
-  return '<div class="leg"><span>'+escapeHtml(a.name+' → '+b.name+' · '+leg.mode+' · '+minutes(leg.mins))+'</span>'+sectionLink('Google',google(b,a,mode))+sectionLink('Apple',apple(b,a,mode))+(walk?'<button class="secondary" data-walk="'+day+':'+index+'">算步行路段</button>':'')+'</div>';
+  return '<div class="leg"><span>'+escapeHtml(a.name+' → '+b.name+' · '+leg.mode+' · '+minutes(leg.mins))+'</span>'+sectionLink('Google',google(b,a,mode))+sectionLink('Apple',apple(b,a,mode))+(walk&&ownerMode?'<button class="secondary" data-walk="'+day+':'+index+'">算步行路段</button>':'')+'</div>';
 }
 function dayWarnings(d){
   return [
@@ -172,12 +197,12 @@ async function generate(){
   const revision=planRevision;
   busy=true;dayFilter=null;walkingLine=null;render();
   try{
-    const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records:state.records,locks:state.locks,limit:state.limit,allowApprox:state.allowApprox})});
+    const r=await fetch(apiPrefix+'/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records:state.records,locks:state.locks,limit:state.limit,allowApprox:state.allowApprox})});
     const result=await r.json();
     if(!r.ok||!result.plans)throw Error(result.error||'排程失败');
     if(revision!==planRevision)return;
     state.trip=result;persist();
-    notice(result.provider==='直线距离估算'?'已生成估算行程 · 路由服务暂不可用':'两种出境方案已生成');
+    notice(result.provider==='直线距离估算'?'已生成估算行程':'两种出境方案已生成');
   }catch(e){notice(e.message||'排程失败');}
   finally{
     busy=false;render();
@@ -190,7 +215,7 @@ async function walking(value){
   if(!leg)return;
   notice('正在计算步行路段');
   try{
-    const r=await fetch('/api/walk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coords:leg.coords})}),data=await r.json();
+    const r=await fetch(apiPrefix+'/walk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coords:leg.coords})}),data=await r.json();
     if(!r.ok)throw Error(data.error);
     if(p!==pickedPlan())return;
     walkingLine={coords:data.road,color:'#487b67',emphasis:true};
@@ -284,4 +309,4 @@ content.addEventListener('dragstart',e=>{dragId=e.target.closest('[data-drag]')?
 content.addEventListener('dragover',e=>{if(dragId&&e.target.closest('[data-day]'))e.preventDefault();});
 content.addEventListener('drop',e=>{const d=e.target.closest('[data-day]');if(!d||!dragId)return;e.preventDefault();const id=dragId;dragId=null;setLock(id,travelDays[Number(d.dataset.day)],state.locks[id]?.time,true);});
 content.addEventListener('dragend',()=>{dragId=null;});
-render();loadState();
+if(ownerMode)loadState();else render();

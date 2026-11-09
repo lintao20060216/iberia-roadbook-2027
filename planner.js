@@ -148,7 +148,7 @@ function providerRequest(profile,endpoint,coords,token,query,origin){
   if(token)url.searchParams.set('access_token',token);
   return fetch(url,{headers:{'User-Agent':'Iberia Roadbook private trip planner','Referer':origin+'/'},signal:AbortSignal.timeout(6500)}).then(async r=>{if(!r.ok)throw Error('routing '+r.status);return r.json()});
 }
-async function planTrips(body,token,origin){
+async function planTrips(body,token,origin,useRouting=true){
   const records=body.records||{},submittedLocks=body.locks||{};
   const locks=Object.fromEntries(Object.entries(submittedLocks).filter(([,lock])=>travelDays.includes(lock?.date)));
   const catalog=places.map(p=>{
@@ -171,11 +171,11 @@ async function planTrips(body,token,origin){
     const result=await routeCall('driving','table',points,{annotations:'duration,distance'});
     return Array.isArray(result.durations)?result:null;
   }
-  if(routingToken){
+  if(useRouting&&routingToken){
     try{matrix=await loadMatrix(25);}catch{}
     if(!matrix)routingToken=null;
   }
-  if(!routingToken){
+  if(useRouting&&!routingToken){
     try{matrix=await loadMatrix(50);}catch{}
   }
   function metric(a,b){
