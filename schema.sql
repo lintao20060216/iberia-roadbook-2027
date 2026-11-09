@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS roadbook (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  state TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
