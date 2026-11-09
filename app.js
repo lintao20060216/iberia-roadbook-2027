@@ -222,7 +222,7 @@ function exportPlan(){
       d.legs.map((leg,j)=>legCard(leg,i,j)).join('')+'</section>';
   }).join('');
   const excluded=p.excluded.map(e=>'<li>'+escapeHtml((getPlace(e.id)?.name||e.id)+' · '+e.why)+'</li>').join('');
-  $('#printArea').innerHTML='<h1>伊比利亚漫游 · '+anchors[p.end].name+'出</h1>'+
+  $('#printArea').innerHTML='<h1>全球旅行规划 · 伊比利亚半岛 · '+anchors[p.end].name+'出</h1>'+
     '<p>2027.01.27 — 02.10 · 1 月 26 日抵达后休息 · 各站均用当地时间</p>'+
     '<p>车程来源 '+escapeHtml(state.trip.provider)+(state.trip.stale?' · 行程待重算':'')+
     (!p.exact?' · 部分路段使用估算':'')+'</p>'+days+(excluded?'<h2>待安排</h2><ul>'+excluded+'</ul>':'');
