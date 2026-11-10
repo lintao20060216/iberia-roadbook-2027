@@ -1,0 +1,26 @@
+.work-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:8px 0}
+.work-head{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+.work-project{display:grid;gap:5px;margin-top:6px}
+.work-project select{font-weight:650}
+.work select,.work input:not([type=checkbox]),.work textarea{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:8px;font:inherit;color:var(--ink)}
+.work-search,.work-pair{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px;margin:8px 0}
+.work-filters{display:flex;flex-wrap:wrap;gap:6px 11px;font-size:12px;margin:12px 0}
+.work-filters input{accent-color:var(--accent)}
+.work-box,.work-row{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:6px 0}
+.work-box p{font-size:13px;line-height:1.55;margin:6px 0;overflow-wrap:anywhere}
+.work-row small,.print-row small{display:block;color:var(--muted);margin:3px 0}
+.work-row.is-selected{border-color:var(--accent);background:#f3e3d7}
+.work-title{padding:0;border:0;background:none;text-align:left;font-weight:700}
+.work-title:hover{text-decoration:underline}
+.work-guest{white-space:nowrap}
+#workDialog{width:min(540px,calc(100% - 26px));max-height:86dvh;border:1px solid var(--line);border-radius:17px;background:var(--paper);color:var(--ink);padding:16px}
+#workDialog::backdrop{background:#30251a66}
+#workDialog label,#aiForm label{display:block;margin:8px 0;font-size:13px}
+#workDialog label input:not([type=checkbox]),#workDialog label select,#workDialog label textarea,#aiForm textarea{margin-top:5px}
+#workDialog h2{margin:0 auto 0 0}
+.work textarea{min-height:64px;resize:vertical}
+.ai-text{white-space:pre-wrap}
+@media(max-width:720px){.work .top nav button{padding:5px 6px;font-size:11px}.work-guest{font-size:10px}.work .maptitle{max-width:75%}}
+@media print{.work #printArea article{max-width:100%;font-size:11pt;color:#211d17}.work #printArea h2{break-after:avoid;border-bottom:1px solid #ccc;padding-bottom:5px}.print-row{break-inside:avoid;padding:4px 0;border-bottom:1px solid #ddd}.work #printArea small{color:#444}}
+.work-regions{display:block;border:1px solid var(--line);border-radius:8px;padding:6px 10px;max-height:180px;overflow:auto}
+.work-regions small{color:var(--muted)}

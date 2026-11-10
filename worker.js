@@ -1,5 +1,5 @@
-const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store'}});
-const mime={'/':'text/html; charset=utf-8','/style.css':'text/css; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/map.js':'text/javascript; charset=utf-8','/places.js':'text/javascript; charset=utf-8','/world.json':'application/json','/vendor/maplibre-gl.js':'text/javascript; charset=utf-8','/vendor/maplibre-gl.css':'text/css; charset=utf-8','/vendor/maplibre-license.txt':'text/plain; charset=utf-8'};
+const json=(value,status=200,headers={})=>Response.json(value,{status,headers:{'Cache-Control':'no-store',...headers}});
+const mime={'/region-catalog.mjs':'text/javascript; charset=utf-8','/workspace.mjs':'text/javascript; charset=utf-8','/workspace-model.mjs':'text/javascript; charset=utf-8','/workspace-regions.mjs':'text/javascript; charset=utf-8','/workspace.css':'text/css; charset=utf-8','/':'text/html; charset=utf-8','/style.css':'text/css; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/map.js':'text/javascript; charset=utf-8','/places.js':'text/javascript; charset=utf-8','/world.json':'application/json','/vendor/maplibre-gl.js':'text/javascript; charset=utf-8','/vendor/maplibre-gl.css':'text/css; charset=utf-8','/vendor/maplibre-license.txt':'text/plain; charset=utf-8'};
 async function serveMap(path,origin){
   const street=path.startsWith('/basemap/');
   const suffix=path.slice(street?'/basemap'.length:'/imagery'.length);
@@ -53,18 +53,32 @@ export default {
       try{
         if(request.method==='GET'){
           const row=await env.DB.prepare('SELECT state FROM roadbook WHERE user_id = ?').bind(user).first();
-          return json({state:row?JSON.parse(row.state):null});
+          return json({state:row?JSON.parse(row.state):null},200,{ETag:await stateTag(row?.state)});
         }
         if(request.method==='PUT'){
           if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源不一致'},403);
           const state=await request.text();
           if(state.length>800000)return json({error:'存档过大'},413);
-          JSON.parse(state);
-          await env.DB.prepare('INSERT INTO roadbook (user_id,state,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at').bind(user,state,Date.now()).run();
-          return json({ok:true});
+          const parsed=JSON.parse(state);
+          if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return json({error:'存档格式不正确'},400);
+          const existing=await env.DB.prepare('SELECT state FROM roadbook WHERE user_id = ?').bind(user).first();
+          const tag=request.headers.get('If-Match');
+          if((parsed.workspace||existing?.state.includes('"workspace"'))&&!tag)return json({error:'请刷新以取得最新存档'},428);
+          if(tag&&tag!==await stateTag(existing?.state))return json({error:'存档已被修改'},412);
+          const result=existing
+            ? await env.DB.prepare('UPDATE roadbook SET state=?,updated_at=? WHERE user_id=? AND state=?').bind(state,Date.now(),user,existing.state).run()
+            : await env.DB.prepare('INSERT INTO roadbook (user_id,state,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO NOTHING').bind(user,state,Date.now()).run();
+          if(!result.meta?.changes)return json({error:'存档已被修改'},412);
+          return json({ok:true},200,{ETag:await stateTag(state)});
         }
         return json({error:'方法不支持'},405);
       }catch{return json({error:'云端存档暂不可用'},503);}
+    }
+    if(['/api/workspace/drive','/api/workspace/ai'].includes(path)){
+      if(!privatePage)return json({error:'请先使用邮箱登录'},401);
+      if(request.method!=='POST')return json({error:'方法不支持'},405);
+      if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源不一致'},403);
+      return workspaceApi(path,request,env,url.origin);
     }
     if(path==='/api/plan'&&request.method==='POST'){
       if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源不一致'},403);
@@ -86,7 +100,8 @@ export default {
         return route?json({road:route.geometry.coordinates,minutes:Math.round(route.duration/60),km:Math.round(route.distance/100)/10}):json({error:'找不到步行路线'},404);
       }catch{return json({error:'步行服务暂不可用'},503);}
     }
-    if(Object.hasOwn(assets,path))return new Response(assets[path],{headers:{'Content-Type':mime[path],'Cache-Control':privatePage||path==='/'?'private, no-store':'public, max-age=300','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
+    const assetPath=privatePage&&path==='/'?'/account/':path;
+    if(Object.hasOwn(assets,assetPath))return new Response(assets[assetPath],{headers:{'Content-Type':mime[path],'Cache-Control':privatePage||path==='/'?'private, no-store':'public, max-age=300','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
     return new Response('Not found',{status:404});
   }
 };
