@@ -168,7 +168,7 @@ function planView(p){
 }
 function aiView(p){
   if(!p)return '<h2>AI 旅行助手</h2><p>先选择旅行项目。</p>';
-  return '<h2>AI 旅行助手</h2><p class="intro">结合项目地点与已确认安排生成建议。草案需确认后才会加入行程。</p><form id="aiForm"><label>你的需求<textarea name="prompt" maxlength="2000" required placeholder="例如：把巴塞罗那留两天，避免影响已订酒店"></textarea></label><label><input type="checkbox" name="web" checked> 查询公开网页并附来源</label><button class="primary">生成建议</button></form><p id="aiStatus" role="status"></p>'+
+  return '<h2>AI 旅行助手</h2><p class="intro">使用 DeepSeek 生成建议。请求会发送项目地点、行程和你的问题。草案需确认后才会加入行程。</p><form id="aiForm"><label>你的需求<textarea name="prompt" maxlength="2000" required placeholder="例如：把巴塞罗那留两天，避免影响已订酒店"></textarea></label><label><input type="checkbox" name="web"> 使用 DeepSeek Pro 查询公开网页</label><button class="primary">生成建议</button></form><p id="aiStatus" role="status"></p>'+
     (draft?.projectId===p.id?'<div class="work-box"><p class="ai-text">'+esc(draft.summary)+'</p>'+draft.sources.map(s=>'<p>'+link(s.title||'查看来源',s.url)+'</p>').join('')+
       draft.items.map(i=>'<div class="work-row"><small>'+esc([i.date,timeLabel(i)].filter(Boolean).join(' · '))+'</small>'+entrySummary(i)+'</div>').join('')+
       (draft.items.length?buttons('ai-apply','确认加入草案','','primary'):'')+'</div>':'')+
@@ -289,11 +289,12 @@ function driveEditor(){
   dialog('计算自驾路段',select('from','出发地点',locations)+select('to','到达地点',locations)+
     '<div id="waypoints"></div>'+buttons('add-via','＋ 添加途经点')+
     pair(input('date','日期',p.start,'date'),input('start','当地出发时间','','time'))+
-    '<p class="tiny">只为相连的陆路路段计算。跨海航班可以另加为机票事项。此估算不含实时交通。</p>',async v=>{
+    check('traffic','按查询时的路况计算（需要 Mapbox）',false)+
+    '<p class="tiny">只为相连的陆路路段计算。勾选后按现在的路况估算，所选日期和时间用于行程记录。</p>',async v=>{
     const ids=[v.from,...new FormData(form).getAll('via'),v.to].filter(Boolean);
     if(new Set(ids).size!==ids.length)throw Error('起点、途经点与终点需要不同');
     const stops=ids.map(place);
-    const route=await api('drive',{coords:stops.map(p=>p.coords)});
+    const route=await api('drive',{coords:stops.map(p=>p.coords),traffic:v.traffic==='on'});
     const from=stops[0],to=stops.at(-1);
     const tz=timeZone(from),endTz=timeZone(to);
     let end='',endDate='';
