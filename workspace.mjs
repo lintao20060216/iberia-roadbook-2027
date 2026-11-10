@@ -157,13 +157,43 @@ function timeLabel(i){
   const end=i.end?[i.endDate&&i.endDate!==i.date?i.endDate:'',i.end,i.endTz||i.tz].filter(Boolean).join(' '):'';
   return [i.start?[i.start,i.tz].filter(Boolean).join(' '):'',end].filter(Boolean).join(' → ')||'时间待定';
 }
+function googleDrivingLinks(item,p){
+  if(item.type!=='drive'||!item.route)return '';
+  let stops=item.route.stops;
+  if(!Array.isArray(stops)||stops.length<2||!stops.every(validCoords)){
+    const names=item.title.split(' → ');
+    const locations=projectPlaces(p);
+    stops=names.map(name=>{
+      const matches=locations.filter(location=>location.name===name&&validCoords(location.coords));
+      return matches.length===1?matches[0].coords:null;
+    });
+    if(names.length<2||!stops.every(validCoords)){
+      // Older day drafts may store the whole day's line on its first leg.
+      // Use geometry endpoints only for standalone routes with a leg list.
+      if(!Array.isArray(item.route.legs)||!Array.isArray(item.route.coords)||item.route.coords.length<2)return '';
+      stops=[item.route.coords[0],item.route.coords.at(-1)];
+      if(!stops.every(validCoords))return '';
+    }
+  }
+  const links=[];
+  const toParam=([lon,lat])=>lat+','+lon;
+  // Mobile browsers support up to three intermediate waypoints per URL.
+  for(let i=0;i<stops.length-1;i+=4){
+    const group=stops.slice(i,i+5);
+    const params=new URLSearchParams({api:'1',origin:toParam(group[0]),destination:toParam(group.at(-1)),travelmode:'driving'});
+    if(group.length>2)params.set('waypoints',group.slice(1,-1).map(toParam).join('|'));
+    const label=stops.length>5?'Google Maps · 第 '+(links.length+1)+' 段':'在 Google Maps 打开';
+    links.push(link(label,'https://www.google.com/maps/dir/?'+params));
+  }
+  return links.join(' ');
+}
 function planView(p){
   if(!p)return '<h2>每日行程</h2><p>先选择或创建一个旅行项目。</p>';
   const issues=checkSchedule(p);
   return '<h2>每日行程</h2><p class="intro">'+esc(dates(p))+'</p><div class="work-actions">'+buttons('schedule-add','＋ 新增事项','','primary')+buttons('drive','计算自驾路段')+buttons('day-draft','生成一天自驾草案')+buttons('print','导出 PDF')+'</div>'+
     (issues.length?'<div class="warning">'+issues.map(esc).join('<br>')+'</div>':'')+
     scheduleGroups(p).map(([date,items])=>'<details class="day" '+(items.length?'open':'')+'><summary>'+esc(date||'待定日期')+' · '+items.length+' 项</summary>'+
-      items.map(i=>'<div class="work-row"><small>'+esc(timeLabel(i))+'</small>'+entrySummary(i)+'<div class="work-actions">'+buttons('schedule-edit','编辑',i.id)+(i.placeId&&place(i.placeId)?buttons('focus','地图',i.placeId):'')+'</div></div>').join('')+
+      items.map(i=>'<div class="work-row"><small>'+esc(timeLabel(i))+'</small>'+entrySummary(i)+'<div class="work-actions">'+buttons('schedule-edit','编辑',i.id)+(i.placeId&&place(i.placeId)?buttons('focus','地图',i.placeId):'')+googleDrivingLinks(i,p)+'</div></div>').join('')+
       buttons('schedule-date','＋ 添加到这一天',date)+'</details>').join('');
 }
 function aiView(p){
@@ -303,7 +333,7 @@ function driveEditor(){
       end=time.slice(11,16);endDate=time.slice(0,10);
     }
     p.schedule.push({id:uid(),title:stops.map(p=>p.name).join(' → '),type:'drive',date:v.date,start:v.start,end,endDate,tz,endTz,
-      fixed:false,route,notes:endTz&&tz!==endTz?'跨时区路段，请核对并填写到达当地时间。':''});
+      fixed:false,route:{...route,stops:stops.map(p=>p.coords)},notes:endTz&&tz!==endTz?'跨时区路段，请核对并填写到达当地时间。':''});
     save();
   },'计算并加入行程');
   $('#waypoints').dataset.locations=JSON.stringify(locations);
@@ -336,7 +366,7 @@ function dayDraftEditor(){
     stops.forEach((stop,i)=>{
       if(i){
         const leg=route.legs[i-1];
-        add(stops[i-1].name+' → '+stop.name,'drive',leg.minutes,{route:{...leg,provider:route.provider,estimated:false,...(i===1?{coords:route.coords}:{})}});
+        add(stops[i-1].name+' → '+stop.name,'drive',leg.minutes,{route:{...leg,stops:[stops[i-1].coords,stop.coords],provider:route.provider,estimated:false,...(i===1?{coords:route.coords}:{})}});
         if(Number(v.buffer))add('停车、步行与缓冲','break',Number(v.buffer));
       }
       add(stop.name,stop.type,stop.minutes||60,{placeId:stop.id,address:stop.address,notes:stop.minutes?'':'待核对建议停留时间'});
