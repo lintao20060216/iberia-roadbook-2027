@@ -1,5 +1,6 @@
 import {types,entryTypes,tripStatuses,uid,validDate,validCoords,migrate,newProject,updateDates,checkSchedule,shift} from './workspace-model.mjs';
-import {regions,regionName,regionPoints,metro} from './workspace-regions.mjs';
+import {autoPlan,autoDates,planStops} from './auto-plan.mjs';
+import {regions,regionName,regionPoints} from './workspace-regions.mjs';
 
 const $=selector=>document.querySelector(selector);
 const panel=$('#panelContent'), print=$('#printArea');
@@ -7,15 +8,14 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const safeLink=value=>{try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)?url.href:'';}catch{return '';}};
 const link=(label,url)=>safeLink(url)?'<a target="_blank" rel="noopener noreferrer" href="'+esc(safeLink(url))+'">'+esc(label)+' ↗</a>':'';
 const buttons=(action,label,value='',classes='secondary')=>'<button type="button" class="'+classes+'" data-action="'+action+'" data-value="'+esc(value)+'">'+label+'</button>';
-const filterTypes={sight:'#667842',experience:'#a7543a',food:'#a26c32',stay:'#6d5683',event:'#386e81',metro:'#247374'};
-for(const [id,color] of Object.entries(filterTypes))categories['work-'+id]=[types[id]||'地铁',color,'●'];
+const filterTypes={sight:'#667842',experience:'#a7543a',food:'#a26c32',stay:'#6d5683',event:'#386e81'};
+for(const [id,color] of Object.entries(filterTypes))categories['work-'+id]=[types[id],color,'●'];
 const visible=new Set(Object.keys(types));
 const map=mountMap(id=>{
-  if(id.startsWith('metro:')){transit=true;screen='map';render();$('#metro-'+id.slice(6))?.scrollIntoView({block:'nearest'});return;}
   focus(id);
 },notice);
 let raw, data, projectId='', screen='map', selected='', query='', nation='', transit=false, routeVisible=true;
-let etag='', saveQueue=Promise.resolve(), saveLabel='正在读取私人存档', revision=0, draft=null, undo=null, pendingPick=null;
+let etag='', saveQueue=Promise.resolve(), saveLabel='正在读取私人存档', revision=0, draft=null, undo=null, pendingPick=null, autoDraft=null, ticketRequest='';
 
 function notice(message){
   const el=$('#toast');
@@ -73,7 +73,6 @@ function syncMap(){
   const points=matches().filter(p=>validCoords(p.coords)).map(p=>({...p,cat:'work-'+p.type}));
   const chosen=place(selected);
   if(chosen&&validCoords(chosen.coords)&&!points.some(p=>p.id===chosen.id))points.push({...chosen,cat:'work-'+chosen.type});
-  if(transit)metro.forEach(([name,coords],i)=>points.push({id:'metro:'+i,name,coords,cat:'work-metro'}));
   const lines=(routeVisible?project()?.schedule||[]:[]).filter(i=>Array.isArray(i.route?.coords)&&i.route.coords.length>1).map(i=>({...i.route,color:'#9c4e35'}));
   map.set(points,lines,selected);
 }
@@ -119,8 +118,8 @@ function mapView(p){
   return '<div class="work-actions">'+buttons('place-new','＋ 添加地点','','primary')+(p?buttons('attach','从收藏加入'):'')+'</div>'+
     '<div class="work-search"><input id="workSearch" placeholder="搜索地点、城市或标签" value="'+esc(query)+'"><select id="nation"><option value="">全部国家</option>'+countries.map(c=>'<option '+(nation===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select></div>'+
     '<div class="work-filters">'+Object.entries(types).map(([k,v])=>'<label><input type="checkbox" data-filter="'+k+'" '+(visible.has(k)?'checked':'')+'> '+v+'</label>').join('')+
-    '<label><input type="checkbox" id="workRoutes" '+(routeVisible?'checked':'')+'> 自驾线路</label><label><input type="checkbox" id="workTransit" '+(transit?'checked':'')+'> 地铁图层</label></div>'+
-    (transit?'<div class="work-box"><b>官方地铁线路图</b>'+metro.map(([name,,url],i)=>'<div id="metro-'+i+'">'+link(name,url)+'</div>').join('')+'<small>底图在城市缩放级别显示有数据的地铁线路。</small></div>':'')+
+    '<label><input type="checkbox" id="workRoutes" '+(routeVisible?'checked':'')+'> 自驾线路</label><label><input type="checkbox" id="workTransit" '+(transit?'checked':'')+'> 公共交通</label></div>'+
+    (transit?'<div class="work-box"><b>公共交通 · 地铁</b><p>放大到城市级别，直接查看线路与站点。资料来自 OpenStreetMap，覆盖和完整度因地区而异。</p></div>':'')+
     detailView(place(selected),p)+[...groups].sort(([a],[b])=>a.localeCompare(b,'zh')).map(([name,list])=>'<div class="section"><h3>'+esc(name)+' · '+list.length+'</h3>'+list.map(card).join('')+'</div>').join('')+
     (groups.size?'':'<p class="intro">这里会显示符合筛选条件的地点。</p>');
 }
@@ -136,7 +135,7 @@ function detailView(item,p){
 function entrySummary(i){
   const p=place(i.placeId);
   return '<b>'+esc(i.title)+'</b><small>'+esc([entryTypes[i.type],i.fixed?'已确认':'',i.address||p?.address,i.reference,i.cost].filter(Boolean).join(' · '))+'</small>'+
-    (i.route?'<small>'+esc((i.route.estimated?'估算 · ':'道路路线 · ')+i.route.km+' km · '+i.route.minutes+' 分钟 · '+i.route.provider)+'</small>':'')+
+    (i.route?'<small>'+esc((i.route.estimated?'估算 · ':'道路路线 · ')+(Number.isFinite(i.route.km)?i.route.km+' km · ':'')+i.route.minutes+' 分钟 · '+i.route.provider)+'</small>':'')+
     (i.notes?'<small>'+esc(i.notes)+'</small>':'');
 }
 const sorted=p=>[...p.schedule].sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||(a.start||'99').localeCompare(b.start||'99'));
@@ -190,15 +189,15 @@ function googleDrivingLinks(item,p){
 function planView(p){
   if(!p)return '<h2>每日行程</h2><p>先选择或创建一个旅行项目。</p>';
   const issues=checkSchedule(p);
-  return '<h2>每日行程</h2><p class="intro">'+esc(dates(p))+'</p><div class="work-actions">'+buttons('schedule-add','＋ 新增事项','','primary')+buttons('drive','计算自驾路段')+buttons('day-draft','生成一天自驾草案')+buttons('print','导出 PDF')+'</div>'+
-    (issues.length?'<div class="warning">'+issues.map(esc).join('<br>')+'</div>':'')+
+  return '<h2>每日行程</h2><p class="intro">'+esc(dates(p))+'</p><div class="work-actions">'+buttons('schedule-add','＋ 新增事项','','primary')+buttons('drive','计算自驾路段')+buttons('day-draft','生成一天自驾草案')+buttons('auto-plan','从收藏自动排程','','primary')+buttons('print','导出 PDF')+'</div>'+
+    (issues.length?'<div class="warning">'+issues.map(esc).join('<br>')+'</div>':'')+autoDraftView(p)+
     scheduleGroups(p).map(([date,items])=>'<details class="day" '+(items.length?'open':'')+'><summary>'+esc(date||'待定日期')+' · '+items.length+' 项</summary>'+
       items.map(i=>'<div class="work-row"><small>'+esc(timeLabel(i))+'</small>'+entrySummary(i)+'<div class="work-actions">'+buttons('schedule-edit','编辑',i.id)+(i.placeId&&place(i.placeId)?buttons('focus','地图',i.placeId):'')+googleDrivingLinks(i,p)+'</div></div>').join('')+
       buttons('schedule-date','＋ 添加到这一天',date)+'</details>').join('');
 }
 function aiView(p){
   if(!p)return '<h2>AI 旅行助手</h2><p>先选择旅行项目。</p>';
-  return '<h2>AI 旅行助手</h2><p class="intro">使用 DeepSeek 生成建议。请求会发送项目地点、行程和你的问题。草案需确认后才会加入行程。</p><form id="aiForm"><label>你的需求<textarea name="prompt" maxlength="2000" required placeholder="例如：把巴塞罗那留两天，避免影响已订酒店"></textarea></label><label><input type="checkbox" name="web"> 使用 DeepSeek Pro 查询公开网页</label><button class="primary">生成建议</button></form><p id="aiStatus" role="status"></p>'+
+  return '<h2>AI 旅行助手</h2><p class="intro">使用 DeepSeek 生成建议。请求会发送项目地点、行程和你的问题。草案需确认后才会加入行程。</p><form id="aiForm"><label>你的需求<textarea name="prompt" maxlength="2000" required placeholder="例如：把巴塞罗那留两天，避免影响已订酒店">'+esc(ticketRequest)+'</textarea></label><label><input type="checkbox" name="web" '+(ticketRequest?'checked':'')+'> 使用 DeepSeek Pro 查询公开网页</label><button class="primary">生成建议</button></form><p id="aiStatus" role="status"></p>'+
     (draft?.projectId===p.id?'<div class="work-box"><p class="ai-text">'+esc(draft.summary)+'</p>'+draft.sources.map(s=>'<p>'+link(s.title||'查看来源',s.url)+'</p>').join('')+
       draft.items.map(i=>'<div class="work-row"><small>'+esc([i.date,timeLabel(i)].filter(Boolean).join(' · '))+'</small>'+entrySummary(i)+'</div>').join('')+
       (draft.items.length?buttons('ai-apply','确认加入草案','','primary'):'')+'</div>':'')+
@@ -377,14 +376,62 @@ function dayDraftEditor(){
   },'生成并加入当天行程');
   $('#waypoints').dataset.locations=JSON.stringify(locations);
 }
+function autoEditor(){
+  const p=project();
+  const places=projectPlaces(p);
+  if(!places.length){notice('先收藏地点并加入当前项目');return;}
+  const preferred=places.filter(i=>['want','must','booked'].includes(p.statuses[i.id])||i.saved);
+  const ordered=[...preferred,...places.filter(i=>!preferred.includes(i))];
+  const starts=Object.fromEntries([['','从第一个景点开始'],...places.filter(i=>validCoords(i.coords)).map(i=>[i.id,i.name])]);
+  dialog('从收藏自动排程',pair(input('start','出发日期',p.start,'date','required'),input('end','结束日期',p.end,'date','required'))+
+    pair(input('from','每天最早开始','09:00','time','required'),input('to','每天最晚结束','19:00','time','required'))+
+    pair(input('maxStops','每天最多新增几个景点',3,'number','required min="1" max="10"'),input('buffer','每次到达后预留分钟',20,'number','required min="0" max="120"'))+
+    select('initial','第一天从哪里出发',starts)+
+    '<p class="tiny">选中的地点视为必去。已有事项保留，尚未确认场次的活动会单独列出。</p><div class="work-regions">'+
+    ordered.map(i=>'<label><input type="checkbox" name="items" value="'+esc(i.id)+'" '+(preferred.includes(i)?'checked':'')+'> '+esc(i.name+' · '+(i.city||i.country||''))+'</label>').join('')+'</div><p id="autoStatus" role="status"></p>',
+    async v=>{
+      const ids=new FormData(form).getAll('items');
+      if(!ids.length)throw Error('请至少选一个地点');
+      const count=autoDates(v.start,v.end);
+      if(count<1||count>31||!v.from||!v.to||v.from>=v.to)throw Error('请选择 1–31 天的有效日期和每日时段');
+      const selected=ids.map(place).filter(Boolean), initial=place(v.initial);
+      const existing=p.schedule.filter(i=>i.date<=v.end&&(i.endDate||i.date)>=v.start).map(i=>place(i.placeId)).filter(Boolean);
+      const stops=planStops(selected,existing,initial);
+      $('#autoStatus').textContent='正在比较地点位置与道路车程…';
+      let matrix=null;
+      if(stops.length>1&&stops.length<=25){
+        try{matrix=await api('auto-distances',{coords:stops.map(i=>i.coords)});}catch{}
+      }
+      if(project()!==p)return;
+      autoDraft={projectId:p.id,selected:ids,...autoPlan({selected,project:p,allPlaces:data.library,initial,stops,matrix,
+        start:v.start,end:v.end,from:v.from,to:v.to,maxStops:Number(v.maxStops),buffer:Number(v.buffer)})};
+      screen='plan';
+    },'生成可编辑草案');
+}
+function autoDraftView(p){
+  if(autoDraft?.projectId!==p.id)return '';
+  const draft=autoDraft;
+  const ticketPlaces=draft.selected.map(place).filter(i=>i&&['sight','experience','event'].includes(i.type));
+  return '<div class="work-box"><h3>自动行程草案</h3><p>新增 '+draft.items.filter(i=>i.placeId).length+' 个地点 · 保留 '+draft.preserved.length+' 个已排事项 · '+draft.unplaced.length+' 个待安排</p>'+
+    (draft.usedEstimates?'<p class="warning">部分车程按距离估算，出发前请核对实际道路。</p>':'')+
+    draft.warnings.map(w=>'<p class="warning">'+esc(w)+'</p>').join('')+
+    draft.unplaced.map(i=>'<p><b>'+esc(i.name)+'</b> · '+esc(i.reason)+'</p>').join('')+
+    draft.items.map(i=>'<div class="work-row"><b>'+esc(i.title)+'</b><div class="work-pair">'+
+      ['date','start','end'].map((key,index)=>'<label>'+['日期','开始','结束'][index]+'<input type="'+(key==='date'?'date':'time')+'" data-auto-id="'+esc(i.id)+'" data-auto-field="'+key+'" value="'+esc(i[key])+'"></label>').join('')+
+      '</div></div>').join('')+
+    (draft.items.length?buttons('auto-apply','确认加入行程','','primary'):'')+buttons('auto-discard','关闭草案')+
+    (ticketPlaces.length?'<h4>购票和预约</h4><p>先核对场馆官网的日期、票价、场次和退改规则。未核实的项目请先查询再购买。</p>'+
+      ticketPlaces.map(i=>'<p><b>'+esc(i.name)+'</b> '+link('打开已保存的来源',i.website)+' '+buttons('ticket-check','用 AI 查官方购票',i.id)+(i.booking?' · '+esc(i.booking):' · 预约待核实')+'</p>').join(''):'')+'</div>';
+}
 async function api(path,body){
   const r=await fetch('/account/api/workspace/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const result=await r.json().catch(()=>({error:'服务暂不可用，请重试'}));
+  if(r.redirected||r.status===401||r.status===403)throw Error('邮箱会话已失效，请重新登录后再试。');
+  const result=await r.json().catch(()=>({error:'服务暂不可用，请重试（HTTP '+r.status+'）'}));
   if(!r.ok)throw Error(result.error||'服务暂不可用，请重试');
   return result;
 }
 function openProject(id){
-  projectId=id;selected='';query='';nation='';screen='map';render();fitProject();
+  projectId=id;selected='';query='';nation='';screen='map';ticketRequest='';render();fitProject();
 }
 function exportPlan(p){
   const sections=scheduleGroups(p);
@@ -433,6 +480,29 @@ const actions={
   'schedule-delete':id=>{if(!confirm('移除这个行程事项？'))return;project().schedule=project().schedule.filter(x=>x.id!==id);dlg.close();save();render();},
   drive:driveEditor,
   'day-draft':dayDraftEditor,
+  'auto-plan':autoEditor,
+  'auto-discard':()=>{autoDraft=null;render();},
+  'auto-apply':()=>{
+    const p=project();
+    if(autoDraft?.projectId!==p.id)return;
+    const items=autoDraft.items;
+    if(items.some(i=>!validDate(i.date)||!i.start||!i.end||i.start>=i.end)){
+      notice('请检查草案中的日期与时间');return;
+    }
+    const before=new Set(checkSchedule(p));
+    const warnings=checkSchedule({...p,schedule:[...p.schedule,...items]}).filter(w=>!before.has(w));
+    if(warnings.length&&!confirm('这些事项需要复核：\n'+warnings.slice(0,6).join('\n')+'\n仍要加入吗？'))return;
+    p.schedule.push(...items);autoDraft.items=[];save();render();
+  },
+  'ticket-check':id=>{
+    const item=place(id);
+    if(!item)return;
+    const day=autoDraft?.items.find(i=>i.placeId===id)?.date||project()?.schedule.find(i=>i.placeId===id)?.date||'未定';
+    ticketRequest='请联网核对 '+item.name+'（'+[item.local,item.city,item.country].filter(Boolean).join('，')+'）'+
+      '在 '+day+' 的官方购票或预约入口、预约要求、放票状态和推荐时段。'+
+      (item.website?'已收藏来源：'+item.website+'。':'')+'把未确认信息标成待核实，只给购票建议，不新增行程。';
+    screen='ai';render();$('#aiForm textarea')?.focus();
+  },
   'add-via':()=>{
     const rows=$('#waypoints');
     if(rows.children.length>=10)return;
@@ -465,6 +535,13 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   if(!data)return;
   const t=e.target;
+  if(t.dataset.autoId){
+    const i=autoDraft?.items.find(i=>i.id===t.dataset.autoId);
+    if(i&&['date','start','end'].includes(t.dataset.autoField)){
+      i[t.dataset.autoField]=t.value;
+      if(t.dataset.autoField==='date')i.endDate=t.value;
+    }
+  }
   if(t.id==='projectPicker')openProject(t.value);
   if(t.id==='nation'){nation=t.value;render();}
   if(t.dataset.filter){if(t.checked)visible.add(t.dataset.filter);else{visible.delete(t.dataset.filter);if(place(selected)?.type===t.dataset.filter)selected='';}render();}
@@ -483,7 +560,11 @@ panel.addEventListener('submit',async e=>{
   if(e.target.id!=='aiForm')return;
   e.preventDefault();
   const p=project(), v=new FormData(e.target), status=$('#aiStatus'), b=e.target.querySelector('button');
-  b.disabled=true;status.textContent='正在生成草案…';
+  b.disabled=true;
+  let elapsed=0;
+  const progress=()=>{status.textContent='正在等待 DeepSeek'+(v.has('web')?'查询网页':'生成回复')+'… '+elapsed+' 秒';};
+  progress();
+  const ticker=setInterval(()=>{elapsed++;progress();},1000);
   try{
     const schedule=p.schedule.slice(0,80).map(({title,type,date,start,end,endDate,tz,endTz,fixed})=>({title,type,date,start,end,endDate,tz,endTz,fixed}));
     const stops=projectPlaces(p).slice(0,100).map(({name,country,city,type,minutes})=>({name,country,city,type,minutes}));
@@ -491,7 +572,7 @@ panel.addEventListener('submit',async e=>{
     if(projectId!==p.id||screen!=='ai')return;
     draft={...result,projectId:p.id};render();
   }catch(e){status.textContent=e.message;}
-  finally{b.disabled=false;}
+  finally{clearInterval(ticker);b.disabled=false;}
 });
 $('#sheetGrip').onclick=()=>$('#panel').classList.toggle('expanded');
 $('#resetMap').onclick=()=>fitProject();

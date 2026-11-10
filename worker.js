@@ -1,5 +1,5 @@
 const json=(value,status=200,headers={})=>Response.json(value,{status,headers:{'Cache-Control':'no-store',...headers}});
-const mime={'/region-catalog.mjs':'text/javascript; charset=utf-8','/workspace.mjs':'text/javascript; charset=utf-8','/workspace-model.mjs':'text/javascript; charset=utf-8','/workspace-regions.mjs':'text/javascript; charset=utf-8','/workspace.css':'text/css; charset=utf-8','/':'text/html; charset=utf-8','/style.css':'text/css; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/map.js':'text/javascript; charset=utf-8','/places.js':'text/javascript; charset=utf-8','/world.json':'application/json','/vendor/maplibre-gl.js':'text/javascript; charset=utf-8','/vendor/maplibre-gl.css':'text/css; charset=utf-8','/vendor/maplibre-license.txt':'text/plain; charset=utf-8'};
+const mime={'/auto-plan.mjs':'text/javascript; charset=utf-8','/region-catalog.mjs':'text/javascript; charset=utf-8','/workspace.mjs':'text/javascript; charset=utf-8','/workspace-model.mjs':'text/javascript; charset=utf-8','/workspace-regions.mjs':'text/javascript; charset=utf-8','/workspace.css':'text/css; charset=utf-8','/':'text/html; charset=utf-8','/style.css':'text/css; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/map.js':'text/javascript; charset=utf-8','/places.js':'text/javascript; charset=utf-8','/world.json':'application/json','/vendor/maplibre-gl.js':'text/javascript; charset=utf-8','/vendor/maplibre-gl.css':'text/css; charset=utf-8','/vendor/maplibre-license.txt':'text/plain; charset=utf-8'};
 async function serveMap(path,origin){
   const street=path.startsWith('/basemap/');
   const suffix=path.slice(street?'/basemap'.length:'/imagery'.length);
@@ -45,6 +45,8 @@ export default {
       if(url.pathname==='/account')return new Response(null,{status:302,headers:{...privateHeaders,Location:'/account/'}});
     }
     if(request.method==='GET'&&(path.startsWith('/basemap/')||path.startsWith('/imagery/')))return serveMap(path,url.origin);
+    if(!privatePage&&['/places.js','/api/plan'].includes(path))return new Response('Not found',{status:404,headers:privateHeaders});
+    if(path==='/api/metro'&&request.method==='GET')return loadMetro(url,ctx);
     if(path==='/api/config')return json({mapToken:env.MAPBOX_PUBLIC_TOKEN?.startsWith('pk.')?env.MAPBOX_PUBLIC_TOKEN:null});
     if(path==='/api/state'){
       if(!privatePage)return json({error:'请先使用邮箱登录'},401);
@@ -74,7 +76,7 @@ export default {
         return json({error:'方法不支持'},405);
       }catch{return json({error:'云端存档暂不可用'},503);}
     }
-    if(['/api/workspace/drive','/api/workspace/ai'].includes(path)){
+    if(['/api/workspace/drive','/api/workspace/ai','/api/workspace/auto-distances'].includes(path)){
       if(!privatePage)return json({error:'请先使用邮箱登录'},401);
       if(request.method!=='POST')return json({error:'方法不支持'},405);
       if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源不一致'},403);

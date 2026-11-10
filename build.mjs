@@ -3,11 +3,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const files = {
   '/': 'index.html',
   '/style.css': 'style.css',
-  '/app.js': 'app.js',
   '/workspace.mjs': 'workspace.mjs',
   '/workspace-model.mjs': 'workspace-model.mjs',
   '/workspace-regions.mjs': 'workspace-regions.mjs',
   '/region-catalog.mjs': 'region-catalog.mjs',
+  '/auto-plan.mjs': 'auto-plan.mjs',
   '/workspace.css': 'workspace.css',
   '/map.js': 'map.js',
   '/places.js': 'places.js',
@@ -21,7 +21,7 @@ const assets = Object.fromEntries(await Promise.all(
   Object.entries(files).map(async ([route, file]) => [route, await read(file)])
 ));
 assets['/account/'] = await read('account.html');
-const worker = await Promise.all(['places.js', 'planner.js', 'workspace-api.js', 'worker.js'].map(read));
+const worker = await Promise.all(['places.js', 'planner.js', 'workspace-api.js', 'metro-api.js', 'worker.js'].map(read));
 await mkdir(new URL('dist/', import.meta.url), { recursive: true });
 await writeFile(new URL('dist/worker.js', import.meta.url),
   'const assets=' + JSON.stringify(assets) + ';\n' + worker.join('\n'));

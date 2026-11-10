@@ -11,3 +11,7 @@
 .account-link:hover{background:#fff9ee}
 @media(max-width:720px){.account-link{font-size:10px;padding:5px 7px}.trip{gap:6px}}
 @media(max-width:390px){.trip .tripdot,.trip .tripdot+span{display:none}}
+
+.guest-world .workspace{grid-template-columns:minmax(0,1fr)}
+.guest-world .trip{margin-left:auto}
+.guest-world .mapcredit{bottom:12px}

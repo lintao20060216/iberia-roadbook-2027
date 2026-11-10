@@ -1,18 +1,21 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#f8f3eb"><title>全球旅行规划</title><meta name="description" content="私人旅行地图、收藏与路线规划。当前行程为西班牙与葡萄牙的伊比利亚半岛自驾。"><link rel="stylesheet" href="/style.css?v=3">
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#f8f3eb"><title>全球旅行规划</title><meta name="description" content="拖动地球，浏览全球地图。"><link rel="stylesheet" href="/style.css?v=6">
 <link rel="stylesheet" href="/vendor/maplibre-gl.css">
-</head><body>
-<header class="top"><a class="brand" href="/" aria-label="全球旅行规划主页"><span class="logo">✳</span><span><strong>全球旅行规划</strong><small>GLOBAL TRAVEL PLANNER</small></span></a><nav aria-label="主导航"><button data-tab="explore" class="active">探索地图</button><button data-tab="saved">我的清单 <span id="savedCount">0</span></button><button data-tab="plan">路线与行程</button></nav><div class="trip"><a class="account-link" id="accountLink" href="/account/">邮箱登录</a><span class="tripdot"></span><span><b>当前行程 · 西班牙与葡萄牙</b><small>2027.01.27 — 02.10</small></span></div></header>
+</head><body class="guest-world">
+<header class="top"><a class="brand" href="/" aria-label="全球旅行规划主页"><span class="logo">✳</span><span><strong>全球旅行规划</strong><small>GLOBAL TRAVEL PLANNER</small></span></a><div class="trip"><a class="account-link" href="/account/">邮箱登录</a></div></header>
 <main class="workspace">
 <section class="maparea" aria-label="互动旅行地图">
 <div id="streetMap"></div><canvas id="atlas" aria-label="拖动旋转地球，滚轮或双指缩放"></canvas>
-<div class="maptitle"><div class="overline"><span></span> 当前行程 / CURRENT TRIP</div><h1>伊比利亚半岛</h1><p>西班牙 <i>×</i> 葡萄牙 <span>·</span> 一路向西</p></div>
-<div class="maptools"><button id="resetMap" title="回到伊比利亚" aria-label="回到伊比利亚">⌖</button><button id="zoomIn" aria-label="放大">＋</button><button id="zoomOut" aria-label="缩小">−</button><button id="worldMap" aria-label="全球视图" title="全球视图">◉</button></div>
-<div class="layerbar"><button data-layer="street" class="chosen">街道</button><button data-layer="satellite">卫星</button><button data-layer="atlas">地球</button></div>
+<div class="maptitle"><div class="overline"><span></span> 探索地图 / EXPLORE</div><h1>探索世界</h1><p>拖动地球，探索世界各地</p></div>
+<div class="maptools"><button id="resetMap" title="回到全球视图" aria-label="回到全球视图">⌖</button><button id="zoomIn" aria-label="放大">＋</button><button id="zoomOut" aria-label="缩小">−</button><button id="worldMap" aria-label="全球视图" title="全球视图">◉</button></div>
+<div class="layerbar"><button data-layer="street" class="chosen">街道</button><button data-layer="satellite">卫星</button></div>
 <div id="mapStatus" role="status">拖动地图 · 双指缩放</div><div class="mapcredit" id="mapCredit">Natural Earth</div>
 </section>
-<aside class="panel" id="panel"><button class="sheetGrip" id="sheetGrip" aria-label="展开或收起地点面板"><span></span></button><div id="panelContent" aria-live="polite"></div></aside>
 </main>
 <div id="toast" role="status"></div><div id="printArea"></div>
-<script src="/places.js?v=2" defer></script><script src="/map.js?v=3" defer></script><script src="/app.js?v=4" defer></script>
+<script src="/map.js?v=6" defer></script><script type="module">
+const globe=mountMap(()=>{},()=>{});
+globe.world(true);
+document.querySelector('#resetMap').onclick=()=>globe.world(true);
+</script>
 </body></html>
